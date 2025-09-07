@@ -30,7 +30,7 @@ This custom integration connects to **Listonic Cloud** via Google OAuth2, retrie
 ### Option A — HACS (recommended)
 1. Make sure you have [HACS](https://hacs.xyz/) installed in Home Assistant.
 2. In Home Assistant: **HACS → Integrations → ⋮ (three dots) → Custom repositories**.  
-   Add `https://github.com/yourusername/listonic` as **Category: Integration**.
+   Add `https://github.com/Sanji78/listonic` as **Category: Integration**.
 3. Find **Listonic** in HACS and click **Download**.
 4. **Restart** Home Assistant.
 
