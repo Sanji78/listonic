@@ -1,10 +1,6 @@
 get_lists:
   name: Get Lists
   description: Retrieve all Listonic lists.
-  response:
-    lists:
-      description: The list of Listonic lists
-      example: '[{"Id": "123", "Name": "Grocery List", "ItemCount": 5}]'
 
 get_items:
   name: Get Items
@@ -15,10 +11,6 @@ get_items:
       example: "123456789"
       selector:
         text:
-  response:
-    items:
-      description: The list of items in the specified list
-      example: '[{"Id": "456", "Name": "Milk", "Checked": false}]'
 
 add_item:
   name: Add Item
