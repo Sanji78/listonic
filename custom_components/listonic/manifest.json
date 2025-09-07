@@ -10,5 +10,5 @@
   "issue_tracker": "https://github.com/Sanji78/listonic/issues",
   "loggers": ["custom_components.listonic"],
   "requirements": [],
-  "version": "1.0.0",
+  "version": "1.0.0"
 }
