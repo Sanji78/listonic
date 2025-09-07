@@ -1,0 +1,15 @@
+{
+  "domain": "listonic",
+  "name": "Listonic",
+  "version": "1.0.0",
+  "documentation": "https://github.com/Sanji78/listonic",
+  "integration_type": "hub",
+  "issue_tracker": "https://github.com/Sanji78/listonic/issues",
+  "requirements": [],
+  "dependencies": ["http", "application_credentials"],
+  "codeowners": ["@Sanji78"],
+  "config_flow": true,
+  "iot_class": "cloud_polling",
+  "loggers": ["custom_components.listonic"],
+  "platforms": ["sensor"]
+}
