@@ -165,6 +165,7 @@ PRs and issues are welcome. Please open an issue with logs if you hit a bug.
 ## ❤️ Donate
 If this project helps you, consider buying me a coffee:  
 **[PayPal](https://www.paypal.me/elenacapasso80)**.
+
 ..and yes... 😊 the paypal account is correct. Thank you so much!
 
 ---
