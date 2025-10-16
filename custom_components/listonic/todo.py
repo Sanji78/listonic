@@ -41,12 +41,17 @@ async def async_setup_entry(
             items_by_list = {}
             for lst in lists:
                 list_id = lst["Id"]
-                items = await client.get_items(list_id)
-                items_by_list[list_id] = items
+                try:
+                    items = await client.get_items(list_id)
+                    items_by_list[list_id] = items
+                except Exception as err:
+                    _LOGGER.error("Error fetching items for list %s: %s", list_id, err)
+                    items_by_list[list_id] = []
             return {"lists": lists, "items": items_by_list}
         except Exception as err:
             _LOGGER.error("Error updating Listonic data: %s", err)
-            return {"lists": [], "items": {}}
+            # Don't return empty data, raise the exception so coordinator can handle it
+            raise
 
     coordinator = DataUpdateCoordinator(
         hass,
