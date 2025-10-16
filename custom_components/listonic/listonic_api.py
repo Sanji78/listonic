@@ -21,6 +21,10 @@ class ListonicClient:
         self._listonic_token = None
         self._listonic_refresh_token = None  # Store Listonic refresh token
         
+        # If we have a stored refresh token, set it
+        if CONF_LISTONIC_REFRESH_TOKEN in entry.data:
+            self._listonic_refresh_token = entry.data[CONF_LISTONIC_REFRESH_TOKEN]
+            
     @classmethod
     async def from_config_entry(cls, hass, entry):
         from .oauth2 import get_oauth_implementation
@@ -43,11 +47,40 @@ class ListonicClient:
 
     async def _ensure_listonic_token(self):
         if self._listonic_token:
-            return
+            # Simple token validation by making a test request
+            try:
+                test_headers = {
+                    "Authorization": f"Bearer {self._listonic_token}",
+                    "Culture": self.entry.options.get(CONF_CULTURE, "it-IT"),
+                    "RegionCode": self.entry.options.get(CONF_REGION, "it"),
+                    "ClientAuthorization": f"Basic {CLIENT_AUTH_B64}",
+                }
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        "https://api.listonic.com/api/lists",
+                        headers=test_headers,
+                        timeout=aiohttp.ClientTimeout(total=10)
+                    ) as resp:
+                        if resp.status == 200:
+                            return  # Token is still valid
+                        elif resp.status == 401:
+                            _LOGGER.debug("Token expired, will refresh")
+                            self._listonic_token = None
+            except Exception:
+                _LOGGER.debug("Token validation failed, will refresh")
+                self._listonic_token = None
 
+        # If we get here, we need to get a new token
+        await self._get_new_listonic_token()
+
+    async def _get_new_listonic_token(self):
+        """Get a new Listonic token using available methods."""
+        _LOGGER.debug("Getting new Listonic token")
+        
         # First, try to use the Listonic refresh token if we have one
         if self._listonic_refresh_token:
             try:
+                _LOGGER.debug("Trying to get token using Listonic refresh token")
                 headers = {
                     "Content-Type": "text/plain",
                     "Culture": self.entry.options.get(CONF_CULTURE, "it-IT"),
@@ -62,38 +95,45 @@ class ListonicClient:
                         "https://api.listonic.com/api/loginextended?provider=refresh_token",
                         headers=headers,
                         data=payload,
+                        timeout=aiohttp.ClientTimeout(total=30)
                     ) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             self._listonic_token = data.get("access_token")
-                            self._listonic_refresh_token = data.get("refresh_token")
+                            new_refresh_token = data.get("refresh_token")
                             
                             if self._listonic_token:
-                                _LOGGER.debug("Successfully refreshed Listonic token using refresh token")
+                                _LOGGER.debug("Successfully got Listonic token using refresh token")
                                 
-                                # Update the config entry with the new refresh token
-                                if self._listonic_refresh_token and self._listonic_refresh_token != self.entry.data.get(CONF_LISTONIC_REFRESH_TOKEN):
-                                    new_data = {**self.entry.data, CONF_LISTONIC_REFRESH_TOKEN: self._listonic_refresh_token}
+                                # Update refresh token if we got a new one
+                                if new_refresh_token and new_refresh_token != self._listonic_refresh_token:
+                                    self._listonic_refresh_token = new_refresh_token
+                                    # Update the config entry
+                                    new_data = {**self.entry.data, CONF_LISTONIC_REFRESH_TOKEN: new_refresh_token}
                                     self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+                                    _LOGGER.debug("Updated Listonic refresh token in config entry")
                                 
                                 return
-                # If we get here, the refresh token didn't work
-                _LOGGER.warning("Listonic refresh token failed, falling back to Google token")
+                        else:
+                            _LOGGER.warning("Listonic refresh token failed with status %s", resp.status)
+                            text = await resp.text()
+                            _LOGGER.debug("Response: %s", text[:100] if text else "Empty response")
+                            
             except Exception as err:
-                _LOGGER.warning("Error refreshing Listonic token with refresh token: %s. Falling back to Google token", err)
+                _LOGGER.warning("Error getting Listonic token with refresh token: %s", err)
+
+        # If Listonic refresh token didn't work, try with Google token
+        _LOGGER.debug("Falling back to Google token for Listonic authentication")
         
-        # If we don't have a Listonic refresh token or it failed, try with Google token
-        # Check if we have a valid token
+        # Ensure Google token is valid
         if not self.session.token:
             raise ConfigEntryNotReady("OAuth2 token not yet available")
 
-        # Try to ensure token is valid, but handle cases where refresh_token might be missing
         try:
             await self.session.async_ensure_token_valid()
-        except KeyError as err:
-            if "refresh_token" in str(err):
-                raise ConfigEntryNotReady("OAuth2 refresh token not available. Please reauthenticate.") from err
-            raise
+        except Exception as err:
+            _LOGGER.error("Failed to refresh Google token: %s", err)
+            raise ConfigEntryNotReady("Failed to refresh Google OAuth token") from err
 
         google_access_token = self.session.token.get("access_token")
         
@@ -110,28 +150,40 @@ class ListonicClient:
 
         payload = f"token={google_access_token}"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://api.listonic.com/api/loginextended?automerge=1&autodestruct=1&provider=google",
-                headers=headers,
-                data=payload,
-            ) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    raise ConfigEntryNotReady(f"Listonic login failed: {resp.status} {text}")
-                
-                data = await resp.json()
-                self._listonic_token = data.get("access_token")
-                self._listonic_refresh_token = data.get("refresh_token")
-                
-                if not self._listonic_token:
-                    raise ConfigEntryNotReady("No access token returned from Listonic")
-                
-                # Update the config entry with the new refresh token
-                if self._listonic_refresh_token and self._listonic_refresh_token != self.entry.data.get(CONF_LISTONIC_REFRESH_TOKEN):
-                    new_data = {**self.entry.data, CONF_LISTONIC_REFRESH_TOKEN: self._listonic_refresh_token}
-                    self.hass.config_entries.async_update_entry(self.entry, data=new_data)
-    # --- API Methods ---
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://api.listonic.com/api/loginextended?automerge=1&autodestruct=1&provider=google",
+                    headers=headers,
+                    data=payload,
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as resp:
+                    if resp.status != 200:
+                        text = await resp.text()
+                        _LOGGER.error("Listonic login failed: %s %s", resp.status, text)
+                        raise ConfigEntryNotReady(f"Listonic login failed: {resp.status}")
+                    
+                    data = await resp.json()
+                    self._listonic_token = data.get("access_token")
+                    new_refresh_token = data.get("refresh_token")
+                    
+                    if not self._listonic_token:
+                        raise ConfigEntryNotReady("No access token returned from Listonic")
+                    
+                    # Update the refresh token in config entry
+                    if new_refresh_token:
+                        self._listonic_refresh_token = new_refresh_token
+                        new_data = {**self.entry.data, CONF_LISTONIC_REFRESH_TOKEN: new_refresh_token}
+                        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+                        _LOGGER.debug("Stored new Listonic refresh token")
+                        
+                    _LOGGER.debug("Successfully obtained new Listonic token using Google token")
+                    
+        except Exception as err:
+            _LOGGER.error("Failed to obtain Listonic token: %s", err)
+            raise ConfigEntryNotReady(f"Failed to obtain Listonic token: {err}") from err
+
+    # --- API Methods - KEEP THE ORIGINAL WORKING VERSION ---
 
     async def get_sync_configuration(self):
         headers = await self._auth_headers()
