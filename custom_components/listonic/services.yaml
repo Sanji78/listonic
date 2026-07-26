@@ -24,6 +24,20 @@ add_item:
       required: true
       selector:
         text:
+    amount:
+      required: false
+      selector:
+        number:
+          step: 0.1
+          mode: box
+    unit:
+      required: false
+      selector:
+        text:
+    description:
+      required: false
+      selector:
+        text:
 
 delete_items:
   name: Delete Items

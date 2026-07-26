@@ -46,7 +46,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def _svc_add_item(call: ServiceCall) -> None:
         list_id = call.data["list_id"]
         name = call.data["name"]
-        await client.add_item(list_id, name)
+        amount = call.data.get("amount")
+        unit = call.data.get("unit")
+        description = call.data.get("description")
+
+        await client.add_item(list_id, name, amount, unit, description)
 
     async def _svc_get_items(call: ServiceCall) -> dict:
         list_id = call.data.get("list_id")
