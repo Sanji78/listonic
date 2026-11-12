@@ -219,9 +219,28 @@ class ListonicClient:
                     raise RuntimeError(f"get_items failed: {resp.status}")
                 return await resp.json()
 
-    async def add_item(self, list_id: str, name: str):
+    async def add_item(
+        self, 
+        list_id: str, 
+        name: str, 
+        amount: str | None = None, 
+        unit: str | None = None, 
+        description: str | None = None
+    ) -> None:
         headers = await self._auth_headers()
-        payload = {"Name": name}
+        
+        payload: dict[str, Any] = {
+            "name": name,
+        }
+        
+        # Only attach fields if a value was provided
+        if amount is not None:
+            payload["amount"] = amount
+        if unit:
+            payload["unit"] = unit
+        if description:
+            payload["description"] = description
+        
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"https://api.listonic.com/api/lists/{list_id}/items",
