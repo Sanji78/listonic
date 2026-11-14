@@ -62,9 +62,16 @@ class ListonicConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, dom
         )
     
     @callback
-    def async_oauth_create_entry(self, data: dict) -> FlowResult:
-        """Create config entry after OAuth2 flow finishes."""
-        return super().async_oauth_create_entry(data)
+    async def async_oauth_create_entry(self, data: dict) -> FlowResult:
+        """Save OAuth credentials after authorization."""
+        if self.source == config_entries.SOURCE_REAUTH:
+            return self.async_update_reload_and_abort(
+                self._get_reauth_entry(),
+                data_updates=data,
+                reason="reauth_successful",
+            )
+
+        return await super().async_oauth_create_entry(data)
 
     async def async_step_reauth(self, entry_data: dict) -> FlowResult:
         return await self.async_step_reauth_confirm()
