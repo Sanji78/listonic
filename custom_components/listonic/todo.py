@@ -56,9 +56,10 @@ async def async_setup_entry(
     coordinator = DataUpdateCoordinator(
         hass,
         _LOGGER,
+        config_entry=entry,
         name="listonic_todo",
         update_method=_async_update_data,
-        update_interval=timedelta(seconds=2),  # Increased to 30 seconds for stability
+        update_interval=timedelta(seconds=30),
     )
 
     await coordinator.async_config_entry_first_refresh()
