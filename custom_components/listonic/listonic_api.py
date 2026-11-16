@@ -4,7 +4,7 @@ import aiohttp
 import logging
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_entry_oauth2_flow
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from .const import DOMAIN, CONF_REGION, CONF_CULTURE, CONF_DEVICE_ID, CONF_LISTONIC_REFRESH_TOKEN
 
 _LOGGER = logging.getLogger(__name__)
@@ -126,6 +126,8 @@ class ListonicClient:
 
         try:
             await self.session.async_ensure_token_valid()
+        except ConfigEntryAuthFailed:
+            raise  # Google refresh token revoked/expired: HA starts the reauth flow
         except Exception as err:
             _LOGGER.error("Failed to refresh Google token: %s", err)
             raise ConfigEntryNotReady("Failed to refresh Google OAuth token") from err
@@ -156,6 +158,8 @@ class ListonicClient:
                     if resp.status != 200:
                         text = await resp.text()
                         _LOGGER.error("Listonic login failed: %s %s", resp.status, text)
+                        if resp.status in (401, 403):
+                            raise ConfigEntryAuthFailed(f"Listonic rejected the Google login: {resp.status}")
                         raise ConfigEntryNotReady(f"Listonic login failed: {resp.status}")
                     
                     data = await resp.json()
@@ -177,6 +181,8 @@ class ListonicClient:
                     _LOGGER.debug("Listonic token expires_in=%s", data.get("expires_in"))
                     _LOGGER.debug("Successfully obtained new Listonic token using Google token")
                     
+        except ConfigEntryAuthFailed:
+            raise
         except Exception as err:
             _LOGGER.error("Failed to obtain Listonic token: %s", err)
             raise ConfigEntryNotReady(f"Failed to obtain Listonic token: {err}") from err
