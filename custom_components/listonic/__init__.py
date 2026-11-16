@@ -20,7 +20,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # --- Step 1: create client with OAuth session ---
     try:
-        implementation = get_oauth_implementation(hass, entry)
+        implementation = await get_oauth_implementation(hass, entry)
         session = config_entry_oauth2_flow.OAuth2Session(hass, entry, implementation)
         client = ListonicClient(hass, session, entry)
         
