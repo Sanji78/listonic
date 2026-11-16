@@ -1,3 +1,4 @@
+import asyncio
 import aiohttp
 import logging
 from homeassistant.core import HomeAssistant
@@ -20,6 +21,7 @@ class ListonicClient:
         self.entry = entry
         self._listonic_token = None
         self._listonic_refresh_token = None  # Store Listonic refresh token
+        self._token_lock = asyncio.Lock()  # one token refresh at a time
         
         # If we have a stored refresh token, set it
         if CONF_LISTONIC_REFRESH_TOKEN in entry.data:
@@ -71,7 +73,10 @@ class ListonicClient:
                 self._listonic_token = None
 
         # If we get here, we need to get a new token
-        await self._get_new_listonic_token()
+        async with self._token_lock:
+            if self._listonic_token:
+                return  # another task already refreshed the token while we waited
+            await self._get_new_listonic_token()
 
     async def _get_new_listonic_token(self):
         """Get a new Listonic token using available methods."""
@@ -116,11 +121,14 @@ class ListonicClient:
                                 return
                         else:
                             _LOGGER.warning("Listonic refresh token failed with status %s", resp.status)
+                            if resp.status not in (400, 401, 403):
+                                raise ConfigEntryNotReady(f"Listonic temporary error {resp.status}, will retry")
                             text = await resp.text()
                             _LOGGER.debug("Response: %s", text[:100] if text else "Empty response")
                             
             except Exception as err:
-                _LOGGER.warning("Error getting Listonic token with refresh token: %s", err)
+                _LOGGER.warning("Error getting Listonic token with refresh token: %r", err)
+                raise ConfigEntryNotReady(f"Listonic unreachable, will retry: {err!r}") from err
 
         # If Listonic refresh token didn't work, try with Google token
         _LOGGER.debug("Falling back to Google token for Listonic authentication")
