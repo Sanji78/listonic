@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import time
 import aiohttp
 import logging
@@ -11,6 +12,21 @@ _LOGGER = logging.getLogger(__name__)
 
 # Hardcoded ClientAuthorization value from your working code
 CLIENT_AUTH_B64 = "bGlzdG9uaWNhbmRyb2lkOmkxZldYd3dYTzZVSVdlemNaeWt4"
+
+
+def _retry_on_401(func):
+    """Retry the API call once with a fresh token when Listonic answers 401."""
+    @functools.wraps(func)
+    async def wrapper(self, *args, **kwargs):
+        try:
+            return await func(self, *args, **kwargs)
+        except RuntimeError as err:
+            if ": 401" not in str(err):
+                raise
+            _LOGGER.debug("401 from Listonic in %s: forcing a new token and retrying once", func.__name__)
+            self._listonic_token = None
+            return await func(self, *args, **kwargs)
+    return wrapper
 
 
 class ListonicClient:
@@ -189,6 +205,7 @@ class ListonicClient:
 
     # --- API Methods - KEEP THE ORIGINAL WORKING VERSION ---
 
+    @_retry_on_401
     async def get_sync_configuration(self):
         headers = await self._auth_headers()
         async with aiohttp.ClientSession() as session:
@@ -201,6 +218,7 @@ class ListonicClient:
                     raise RuntimeError(f"Listonic sync configuration failed: {resp.status} {text}")
                 return await resp.json()
 
+    @_retry_on_401
     async def get_lists(self):
         headers = await self._auth_headers()
         async with aiohttp.ClientSession() as session:
@@ -214,6 +232,7 @@ class ListonicClient:
                     raise RuntimeError(f"get_lists failed: {resp.status}")
                 return await resp.json()
 
+    @_retry_on_401
     async def get_items(self, list_id: str):
         headers = await self._auth_headers()
         async with aiohttp.ClientSession() as session:
@@ -225,6 +244,7 @@ class ListonicClient:
                     raise RuntimeError(f"get_items failed: {resp.status}")
                 return await resp.json()
 
+    @_retry_on_401
     async def add_item(
         self, 
         list_id: str, 
@@ -266,6 +286,7 @@ class ListonicClient:
                     _LOGGER.debug("Non-JSON response received for add_item, returning empty dict")
                     return {}
 
+    @_retry_on_401
     async def delete_items(self, list_id: str, ids: list[int]):
         headers = await self._auth_headers()
         
@@ -292,6 +313,7 @@ class ListonicClient:
                     _LOGGER.debug("Non-JSON response received for delete_items, returning empty dict")
                     return {}
                     
+    @_retry_on_401
     async def update_item(self, list_id: str, item_id: int, checked: bool | None = None, name: str | None = None):
         """Update (check/uncheck or rename) a Listonic item."""
         try:
@@ -328,6 +350,7 @@ class ListonicClient:
             _LOGGER.error("Error in update_item: %s", err)
             raise
 
+    @_retry_on_401
     async def create_list(self, name: str):
         """Create a new list in Listonic."""
         headers = await self._auth_headers()
@@ -358,6 +381,7 @@ class ListonicClient:
                     _LOGGER.debug("Non-JSON response received for create_list, returning empty dict")
                     return {}
 
+    @_retry_on_401
     async def delete_list(self, list_id: str):
         """Delete a list in Listonic (set Active: 0)."""
         headers = await self._auth_headers()
@@ -381,6 +405,7 @@ class ListonicClient:
                     _LOGGER.debug("Non-JSON response received for delete_list, returning empty dict")
                     return {}
 
+    @_retry_on_401
     async def update_list(self, list_id: str, name: str):
         """Update a list's name in Listonic."""
         headers = await self._auth_headers()
