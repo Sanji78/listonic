@@ -28,7 +28,7 @@ class ListonicClient:
     @classmethod
     async def from_config_entry(cls, hass, entry):
         from .oauth2 import get_oauth_implementation
-        implementation = get_oauth_implementation(hass, entry)
+        implementation = await get_oauth_implementation(hass, entry)
         session = config_entry_oauth2_flow.OAuth2Session(hass, entry, implementation)
         return cls(hass, session, entry)
 
