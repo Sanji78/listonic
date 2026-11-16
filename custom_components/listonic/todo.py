@@ -19,6 +19,9 @@ from homeassistant.helpers.update_coordinator import (
 
 from datetime import timedelta
 
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.update_coordinator import UpdateFailed
+
 from .const import DOMAIN, CONF_DEVICE_ID
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,14 +47,17 @@ async def async_setup_entry(
                 try:
                     items = await client.get_items(list_id)
                     items_by_list[list_id] = items
+                except ConfigEntryAuthFailed:
+                    raise
                 except Exception as err:
                     _LOGGER.error("Error fetching items for list %s: %s", list_id, err)
                     items_by_list[list_id] = []
             return {"lists": lists, "items": items_by_list}
+        except ConfigEntryAuthFailed:
+            raise  # real auth failure: HA starts the reauth flow
         except Exception as err:
-            _LOGGER.error("Error updating Listonic data: %s", err)
-            # Don't return empty data, raise the exception so coordinator can handle it
-            raise
+            # temporary problem (timeout, 5xx, token being refreshed...): keep the entry and retry at the next poll
+            raise UpdateFailed(f"Error updating Listonic data: {err}") from err
 
     coordinator = DataUpdateCoordinator(
         hass,
