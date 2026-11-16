@@ -1,4 +1,5 @@
 import asyncio
+import time
 import aiohttp
 import logging
 from homeassistant.core import HomeAssistant
@@ -22,6 +23,7 @@ class ListonicClient:
         self._listonic_token = None
         self._listonic_refresh_token = None  # Store Listonic refresh token
         self._token_lock = asyncio.Lock()  # one token refresh at a time
+        self._listonic_token_expiry = 0.0  # time.monotonic() deadline of the current token
         
         # If we have a stored refresh token, set it
         if CONF_LISTONIC_REFRESH_TOKEN in entry.data:
@@ -49,28 +51,10 @@ class ListonicClient:
 
     async def _ensure_listonic_token(self):
         if self._listonic_token:
-            # Simple token validation by making a test request
-            try:
-                test_headers = {
-                    "Authorization": f"Bearer {self._listonic_token}",
-                    "Culture": self.entry.options.get(CONF_CULTURE, "it-IT"),
-                    "RegionCode": self.entry.options.get(CONF_REGION, "it"),
-                    "ClientAuthorization": f"Basic {CLIENT_AUTH_B64}",
-                }
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        "https://api.listonic.com/api/lists",
-                        headers=test_headers,
-                        timeout=aiohttp.ClientTimeout(total=10)
-                    ) as resp:
-                        if resp.status == 200:
-                            return  # Token is still valid
-                        elif resp.status == 401:
-                            _LOGGER.debug("Token expired, will refresh")
-                            self._listonic_token = None
-            except Exception:
-                _LOGGER.debug("Token validation failed, will refresh")
-                self._listonic_token = None
+            # Trust the expiry time: no test request on every API call
+            if time.monotonic() < self._listonic_token_expiry:
+                return
+            self._listonic_token = None  # expired: a new token is obtained below
 
         # If we get here, we need to get a new token
         async with self._token_lock:
@@ -108,6 +92,9 @@ class ListonicClient:
                             new_refresh_token = data.get("refresh_token")
                             
                             if self._listonic_token:
+                                ttl = int(data.get("expires_in") or 600)
+                                self._listonic_token_expiry = time.monotonic() + max(ttl - 60, 30)
+                                _LOGGER.debug("Listonic token expires_in=%s", data.get("expires_in"))
                                 _LOGGER.debug("Successfully got Listonic token using refresh token")
                                 
                                 # Update refresh token if we got a new one
@@ -185,6 +172,9 @@ class ListonicClient:
                         self.hass.config_entries.async_update_entry(self.entry, data=new_data)
                         _LOGGER.debug("Stored new Listonic refresh token")
                         
+                    ttl = int(data.get("expires_in") or 600)
+                    self._listonic_token_expiry = time.monotonic() + max(ttl - 60, 30)
+                    _LOGGER.debug("Listonic token expires_in=%s", data.get("expires_in"))
                     _LOGGER.debug("Successfully obtained new Listonic token using Google token")
                     
         except Exception as err:
@@ -213,6 +203,8 @@ class ListonicClient:
                 headers=headers,
             ) as resp:
                 if resp.status != 200:
+                    if resp.status == 401:
+                        self._listonic_token = None  # force a new token on the next call
                     raise RuntimeError(f"get_lists failed: {resp.status}")
                 return await resp.json()
 
